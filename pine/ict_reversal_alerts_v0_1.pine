@@ -1,0 +1,193 @@
+//@version=6
+indicator("ICT H&S Two-Stage Alerts v0.1", overlay=true, max_labels_count=500, max_lines_count=100)
+
+// Run this indicator on a 5-minute EURUSD or GBPUSD chart.
+// It reads only confirmed 15-minute data and emits WATCH / ENTRY_READY JSON via alert().
+
+string PATTERN_TF = "15"
+string ENTRY_TF = "5"
+string TZ = "America/New_York"
+
+webhookToken = input.string("", "Railway webhook token", confirm=true, display=display.none)
+pivotLen = input.int(2, "15M pivot strength", minval=1, maxval=10)
+shoulderTolAtr = input.float(0.60, "Shoulder similarity tolerance (15M ATR)", minval=0.05, step=0.05)
+minHeadDepthAtr = input.float(0.35, "Minimum head depth (15M ATR)", minval=0.05, step=0.05)
+breakBufferAtr = input.float(0.05, "Neckline close buffer (15M ATR)", minval=0.0, step=0.01)
+retestZoneAtr = input.float(0.20, "5M retest zone half-width (ATR)", minval=0.02, step=0.01)
+expiryBars = input.int(24, "Retest expiry (5M bars)", minval=1, maxval=144)
+requireNeckSlope = input.bool(true, "Require video-style neckline slope")
+useEngulfing = input.bool(true, "Accept engulfing rejection")
+usePinBar = input.bool(true, "Accept pin-bar rejection")
+showDebug = input.bool(true, "Show setup labels and levels")
+londonSession = input.session("0200-0500", "London Kill Zone (New York time)")
+nyPmSession = input.session("1300-1500", "NY PM Kill Zone (New York time)")
+
+if timeframe.period != ENTRY_TF
+    runtime.error("Apply this indicator to a 5-minute chart.")
+
+// Confirmed HTF values: previous completed 15M candle, exposed without lookahead bias.
+[htfTime, htfOpen, htfHigh, htfLow, htfClose, htfAtr, htfPh, htfPl, htfPivotTime, htfLondon, htfNyPm] = request.security(
+     syminfo.tickerid,
+     PATTERN_TF,
+     [time[1], open[1], high[1], low[1], close[1], ta.atr(14)[1], ta.pivothigh(high, pivotLen, pivotLen)[1], ta.pivotlow(low, pivotLen, pivotLen)[1], time[pivotLen + 1], not na(time(timeframe.period, londonSession, TZ))[1], not na(time(timeframe.period, nyPmSession, TZ))[1]],
+     lookahead=barmerge.lookahead_on)
+
+newHtfBar = ta.change(htfTime) != 0
+inLondon = not na(time(timeframe.period, londonSession, TZ))
+inNyPm = not na(time(timeframe.period, nyPmSession, TZ))
+inSession = inLondon or inNyPm
+sessionName = inLondon ? "LONDON" : "NY_PM"
+htfSessionName = htfLondon ? "LONDON" : "NY_PM"
+htfInSession = htfLondon or htfNyPm
+atr5 = ta.atr(14)
+
+// Newest pivot is index 0; oldest retained pivot is index 2.
+var float h0 = na
+var float h1 = na
+var float h2 = na
+var int ht0 = na
+var int ht1 = na
+var int ht2 = na
+var float l0 = na
+var float l1 = na
+var float l2 = na
+var int lt0 = na
+var int lt1 = na
+var int lt2 = na
+
+if newHtfBar and not na(htfPh)
+    h2 := h1
+    ht2 := ht1
+    h1 := h0
+    ht1 := ht0
+    h0 := htfPh
+    ht0 := htfPivotTime
+
+if newHtfBar and not na(htfPl)
+    l2 := l1
+    lt2 := lt1
+    l1 := l0
+    lt1 := lt0
+    l0 := htfPl
+    lt0 := htfPivotTime
+
+neckAt(float p1, int t1, float p2, int t2, int targetTime) =>
+    float slope = t2 == t1 ? 0.0 : (p2 - p1) / float(t2 - t1)
+    p2 + slope * float(targetTime - t2)
+
+bullishEngulfing = close > open and close >= open[1] and open <= close[1]
+bearishEngulfing = close < open and close <= open[1] and open >= close[1]
+body = math.max(math.abs(close - open), syminfo.mintick)
+lowerWick = math.min(open, close) - low
+upperWick = high - math.max(open, close)
+bullishPin = close > open and lowerWick >= body * 1.5 and close >= (high + low) / 2.0
+bearishPin = close < open and upperWick >= body * 1.5 and close <= (high + low) / 2.0
+bullReject = (useEngulfing and bullishEngulfing) or (usePinBar and bullishPin)
+bearReject = (useEngulfing and bearishEngulfing) or (usePinBar and bearishPin)
+
+haveHighs = not na(h0) and not na(h1) and not na(h2) and not na(ht0) and not na(ht1) and not na(ht2)
+haveLows = not na(l0) and not na(l1) and not na(l2) and not na(lt0) and not na(lt1) and not na(lt2)
+shoulderTol = htfAtr * shoulderTolAtr
+minHeadDepth = htfAtr * minHeadDepthAtr
+
+// Normal H&S: H2=left shoulder, H1=head, H0=right shoulder; L1/L0 form neckline.
+bearGeometry = haveHighs and haveLows and ht2 < lt1 and lt1 < ht1 and ht1 < lt0 and lt0 < ht0 and h1 > h2 + minHeadDepth and h1 > h0 + minHeadDepth and math.abs(h2 - h0) <= shoulderTol
+bearSlopeOk = not requireNeckSlope or l0 < l1
+bearPattern = bearGeometry and bearSlopeOk
+
+// Inverse H&S: L2=left shoulder, L1=head, L0=right shoulder; H1/H0 form neckline.
+bullGeometry = haveHighs and haveLows and lt2 < ht1 and ht1 < lt1 and lt1 < ht0 and ht0 < lt0 and l1 < l2 - minHeadDepth and l1 < l0 - minHeadDepth and math.abs(l2 - l0) <= shoulderTol
+bullSlopeOk = not requireNeckSlope or h0 > h1
+bullPattern = bullGeometry and bullSlopeOk
+
+var int bullState = 0
+var int bearState = 0
+var int bullHeadTime = na
+var int bearHeadTime = na
+var float bullNeck1 = na
+var float bullNeck2 = na
+var int bullNeckT1 = na
+var int bullNeckT2 = na
+var float bearNeck1 = na
+var float bearNeck2 = na
+var int bearNeckT1 = na
+var int bearNeckT2 = na
+var float bullInvalidation = na
+var float bearInvalidation = na
+var int bullWatchBar = na
+var int bearWatchBar = na
+
+if bullPattern and lt1 != bullHeadTime
+    bullState := 0
+    bullHeadTime := lt1
+    bullNeck1 := h1
+    bullNeckT1 := ht1
+    bullNeck2 := h0
+    bullNeckT2 := ht0
+    bullInvalidation := l1
+
+if bearPattern and ht1 != bearHeadTime
+    bearState := 0
+    bearHeadTime := ht1
+    bearNeck1 := l1
+    bearNeckT1 := lt1
+    bearNeck2 := l0
+    bearNeckT2 := lt0
+    bearInvalidation := h1
+
+bullNeckNow = not na(bullNeck1) ? neckAt(bullNeck1, bullNeckT1, bullNeck2, bullNeckT2, time) : na
+bearNeckNow = not na(bearNeck1) ? neckAt(bearNeck1, bearNeckT1, bearNeck2, bearNeckT2, time) : na
+bullNeckHtf = not na(bullNeck1) ? neckAt(bullNeck1, bullNeckT1, bullNeck2, bullNeckT2, htfTime) : na
+bearNeckHtf = not na(bearNeck1) ? neckAt(bearNeck1, bearNeckT1, bearNeck2, bearNeckT2, htfTime) : na
+
+makePayload(string setupId, string stage, string direction, string sess, float px, float breakLevel, float zoneLow, float zoneHigh, float invalidation, string reasons) =>
+    string eventTime = str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC")
+    '{"token":"' + webhookToken + '","version":"1","setup_id":"' + setupId + '","stage":"' + stage + '","symbol":"' + syminfo.ticker + '","direction":"' + direction + '","session":"' + sess + '","pattern_tf":"15","entry_tf":"5","event_time":"' + eventTime + '","price":' + str.tostring(px, format.mintick) + ',"break_level":' + str.tostring(breakLevel, format.mintick) + ',"zone_low":' + str.tostring(zoneLow, format.mintick) + ',"zone_high":' + str.tostring(zoneHigh, format.mintick) + ',"invalidation":' + str.tostring(invalidation, format.mintick) + ',"reason":' + reasons + '}'
+
+bullSetupId = syminfo.ticker + ".BUY." + str.tostring(bullHeadTime)
+bearSetupId = syminfo.ticker + ".SELL." + str.tostring(bearHeadTime)
+
+// WATCH: confirmed 15M body close beyond the neckline/structure level during a selected session.
+if newHtfBar and bullState == 0 and not na(bullHeadTime) and htfInSession and htfClose > bullNeckHtf + htfAtr * breakBufferAtr
+    bullState := 1
+    bullWatchBar := bar_index
+    float zoneHalf = atr5 * retestZoneAtr
+    alert(makePayload(bullSetupId, "WATCH", "BUY", htfSessionName, htfClose, bullNeckHtf, bullNeckHtf - zoneHalf, bullNeckHtf + zoneHalf, bullInvalidation, '["INVERSE_HS","BULLISH_CHOCH","BODY_CLOSE_BREAK"]'), alert.freq_once_per_bar_close)
+    if showDebug
+        label.new(bar_index, high, "WATCH BUY\n" + syminfo.ticker, color=color.new(color.teal, 0), textcolor=color.white, style=label.style_label_down)
+
+if newHtfBar and bearState == 0 and not na(bearHeadTime) and htfInSession and htfClose < bearNeckHtf - htfAtr * breakBufferAtr
+    bearState := 1
+    bearWatchBar := bar_index
+    float zoneHalf = atr5 * retestZoneAtr
+    alert(makePayload(bearSetupId, "WATCH", "SELL", htfSessionName, htfClose, bearNeckHtf, bearNeckHtf - zoneHalf, bearNeckHtf + zoneHalf, bearInvalidation, '["HEAD_SHOULDERS","BEARISH_CHOCH","BODY_CLOSE_BREAK"]'), alert.freq_once_per_bar_close)
+    if showDebug
+        label.new(bar_index, low, "WATCH SELL\n" + syminfo.ticker, color=color.new(color.orange, 0), textcolor=color.white, style=label.style_label_up)
+
+// ENTRY_READY: current 5M candle touches the projected zone and rejects in the new direction.
+bullZoneHalf = atr5 * retestZoneAtr
+bearZoneHalf = atr5 * retestZoneAtr
+bullTouched = bullState == 1 and low <= bullNeckNow + bullZoneHalf and high >= bullNeckNow - bullZoneHalf
+bearTouched = bearState == 1 and high >= bearNeckNow - bearZoneHalf and low <= bearNeckNow + bearZoneHalf
+
+if barstate.isconfirmed and inSession and bullTouched and close > bullNeckNow and bullReject
+    bullState := 2
+    alert(makePayload(bullSetupId, "ENTRY_READY", "BUY", sessionName, close, bullNeckNow, bullNeckNow - bullZoneHalf, bullNeckNow + bullZoneHalf, bullInvalidation, '["INVERSE_HS","BULLISH_CHOCH","5M_RETEST","BULLISH_REJECTION"]'), alert.freq_once_per_bar_close)
+    if showDebug
+        label.new(bar_index, low, "ENTRY READY BUY", color=color.new(color.green, 0), textcolor=color.white, style=label.style_label_up)
+
+if barstate.isconfirmed and inSession and bearTouched and close < bearNeckNow and bearReject
+    bearState := 2
+    alert(makePayload(bearSetupId, "ENTRY_READY", "SELL", sessionName, close, bearNeckNow, bearNeckNow - bearZoneHalf, bearNeckNow + bearZoneHalf, bearInvalidation, '["HEAD_SHOULDERS","BEARISH_CHOCH","5M_RETEST","BEARISH_REJECTION"]'), alert.freq_once_per_bar_close)
+    if showDebug
+        label.new(bar_index, high, "ENTRY READY SELL", color=color.new(color.red, 0), textcolor=color.white, style=label.style_label_down)
+
+// Expire or invalidate pending retests. No cancellation notification in v0.1.
+if bullState == 1 and ((bar_index - bullWatchBar > expiryBars) or low < bullInvalidation)
+    bullState := 0
+if bearState == 1 and ((bar_index - bearWatchBar > expiryBars) or high > bearInvalidation)
+    bearState := 0
+
+plot(showDebug and bullState == 1 ? bullNeckNow : na, "Bull retest level", color=color.teal, linewidth=2, style=plot.style_linebr)
+plot(showDebug and bearState == 1 ? bearNeckNow : na, "Bear retest level", color=color.orange, linewidth=2, style=plot.style_linebr)
+bgcolor(inLondon ? color.new(color.blue, 92) : inNyPm ? color.new(color.purple, 92) : na)
