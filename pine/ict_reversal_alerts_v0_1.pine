@@ -26,11 +26,7 @@ if timeframe.period != ENTRY_TF
     runtime.error("Apply this indicator to a 5-minute chart.")
 
 // Confirmed HTF values: previous completed 15M candle, exposed without lookahead bias.
-[htfTime, htfOpen, htfHigh, htfLow, htfClose, htfAtr, htfPh, htfPl, htfPivotTime, htfLondon, htfNyPm] = request.security(
-     syminfo.tickerid,
-     PATTERN_TF,
-     [time[1], open[1], high[1], low[1], close[1], ta.atr(14)[1], ta.pivothigh(high, pivotLen, pivotLen)[1], ta.pivotlow(low, pivotLen, pivotLen)[1], time[pivotLen + 1], not na(time(timeframe.period, londonSession, TZ))[1], not na(time(timeframe.period, nyPmSession, TZ))[1]],
-     lookahead=barmerge.lookahead_on)
+[htfTime, htfOpen, htfHigh, htfLow, htfClose, htfAtr, htfPh, htfPl, htfPivotTime, htfLondon, htfNyPm] = request.security(syminfo.tickerid, PATTERN_TF, [time[1], open[1], high[1], low[1], close[1], ta.atr(14)[1], ta.pivothigh(high, pivotLen, pivotLen)[1], ta.pivotlow(low, pivotLen, pivotLen)[1], time[pivotLen + 1], not na(time(timeframe.period, londonSession, TZ))[1], not na(time(timeframe.period, nyPmSession, TZ))[1]], lookahead=barmerge.lookahead_on)
 
 newHtfBar = ta.change(htfTime) != 0
 inLondon = not na(time(timeframe.period, londonSession, TZ))
