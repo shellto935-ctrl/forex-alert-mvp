@@ -24,7 +24,7 @@ export const signalSchema = z.object({
 });
 
 export type Signal = z.infer<typeof signalSchema>;
-export type DeliveryChannel = 'telegram';
+export type DeliveryChannel = 'telegram' | 'voice';
 export type DeliveryResult = {
   channel: DeliveryChannel;
   ok: boolean;

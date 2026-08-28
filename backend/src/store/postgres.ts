@@ -78,7 +78,7 @@ export class PostgresStore implements SignalStore {
         return { accepted: false, id: existing.rows[0]!.id };
       }
 
-      const channels: DeliveryChannel[] = ['telegram'];
+      const channels: DeliveryChannel[] = signal.stage === 'ENTRY_READY' ? ['telegram', 'voice'] : ['telegram'];
       for (const channel of channels) {
         await client.query(
           `INSERT INTO delivery_jobs (id, signal_id, channel) VALUES ($1, $2, $3)`,

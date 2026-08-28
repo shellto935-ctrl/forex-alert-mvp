@@ -13,7 +13,11 @@ const schema = z.object({
   TWELVEDATA_API_KEY: z.string().optional().default(''),
   POLL_INTERVAL_MS: z.coerce.number().int().min(10_000).default(300_000),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
-  TELEGRAM_CHAT_ID: z.string().optional().default('')
+  TELEGRAM_CHAT_ID: z.string().optional().default(''),
+  TWILIO_ACCOUNT_SID: z.string().optional().default(''),
+  TWILIO_AUTH_TOKEN: z.string().optional().default(''),
+  TWILIO_FROM: z.string().optional().default(''),
+  TWILIO_TO: z.string().optional().default('')
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV === 'production' && !value.DATABASE_URL) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'DATABASE_URL is required in production' });
