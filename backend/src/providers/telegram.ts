@@ -3,7 +3,6 @@ import { logger } from '../logger.js';
 import { messageText } from '../format.js';
 import type { DeliveryResult, Signal } from '../types.js';
 import { isRetryableStatus, parseProviderResponse } from './http.js';
-import { textToSpeechBengali } from './tts.js';
 
 const TELEGRAM_API = 'https://api.telegram.org';
 
@@ -24,26 +23,6 @@ async function tgRequest(endpoint: string, body: object): Promise<{ ok: boolean;
   return { ok: true, messageId: messageId !== undefined ? String(messageId) : undefined };
 }
 
-async function tgVoiceMessage(audioBuffer: Buffer): Promise<{ ok: boolean; error?: string }> {
-  const formData = new FormData();
-  formData.append('chat_id', config.TELEGRAM_CHAT_ID);
-  formData.append('voice', new Blob([new Uint8Array(audioBuffer)], { type: 'audio/mpeg' }), 'voice.mp3');
-
-  const response = await fetch(`${TELEGRAM_API}/bot${config.TELEGRAM_BOT_TOKEN}/sendVoice`, {
-    method: 'POST',
-    body: formData,
-    signal: AbortSignal.timeout(30_000)
-  });
-
-  const { json, text: responseText } = await parseProviderResponse(response);
-  const ok = (json as { ok?: boolean }).ok === true;
-  if (!response.ok || !ok) {
-    const desc = (json as { description?: string }).description;
-    return { ok: false, error: desc ?? `HTTP ${response.status}: ${responseText.slice(0, 300)}` };
-  }
-  return { ok: true };
-}
-
 export async function sendTelegram(signal: Signal): Promise<DeliveryResult> {
   if (config.DRY_RUN) {
     logger.info({ setupId: signal.setup_id, stage: signal.stage }, 'DRY_RUN Telegram message');
@@ -57,7 +36,8 @@ export async function sendTelegram(signal: Signal): Promise<DeliveryResult> {
   const text = messageText(signal);
   const isUrgent = signal.stage === 'ENTRY_READY';
 
-  // Send text messages (3x repeated for ENTRY_READY)
+  // For ENTRY_READY: send 3 repeated text messages with 2s delay between each
+  // Then send a voice message with spoken Bengali text
   const sendCount = isUrgent ? 3 : 1;
   let lastMessageId: string | undefined;
 
@@ -88,11 +68,33 @@ export async function sendTelegram(signal: Signal): Promise<DeliveryResult> {
       const symbolBn = signal.symbol;
       const spokenText = `জরুরি! ${symbolBn} এ ${directionBn} সেটআপ পাওয়া গেছে। চার্ট দেখুন।`;
 
-      const audioBuffer = await textToSpeechBengali(spokenText);
-      const voiceResult = await tgVoiceMessage(audioBuffer);
+      // Use Google Translate TTS to generate audio
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=bn&client=tw-ob&q=${encodeURIComponent(spokenText)}`;
+      const audioResponse = await fetch(ttsUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(30_000)
+      });
 
-      if (!voiceResult.ok) {
-        logger.warn({ error: voiceResult.error }, 'Telegram voice message failed, but text messages were sent');
+      if (!audioResponse.ok) {
+        throw new Error(`Google TTS failed: HTTP ${audioResponse.status}`);
+      }
+
+      const audioBuffer = await audioResponse.arrayBuffer();
+
+      // Send as voice message
+      const formData = new FormData();
+      formData.append('chat_id', config.TELEGRAM_CHAT_ID);
+      formData.append('voice', new Blob([audioBuffer], { type: 'audio/mpeg' }), 'voice.mp3');
+
+      const voiceResponse = await fetch(`${TELEGRAM_API}/bot${config.TELEGRAM_BOT_TOKEN}/sendVoice`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(30_000)
+      });
+
+      const voiceJson = await voiceResponse.json() as { ok?: boolean; description?: string };
+      if (!voiceResponse.ok || !voiceJson.ok) {
+        logger.warn({ error: voiceJson.description }, 'Telegram voice message failed, but text messages were sent');
       }
     } catch (error) {
       logger.warn({ err: error }, 'Telegram voice message generation failed, but text messages were sent');
