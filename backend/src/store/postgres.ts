@@ -29,7 +29,7 @@ export class PostgresStore implements SignalStore {
       CREATE TABLE IF NOT EXISTS delivery_jobs (
         id UUID PRIMARY KEY,
         signal_id UUID NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
-        channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'voice')),
+        channel TEXT NOT NULL CHECK (channel IN ('telegram', 'voice')),
         status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'SUBMITTED', 'FAILED')),
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -76,7 +76,7 @@ export class PostgresStore implements SignalStore {
         return { accepted: false, id: existing.rows[0]!.id };
       }
 
-      const channels: DeliveryChannel[] = signal.stage === 'ENTRY_READY' ? ['whatsapp', 'voice'] : ['whatsapp'];
+      const channels: DeliveryChannel[] = signal.stage === 'ENTRY_READY' ? ['telegram', 'voice'] : ['telegram'];
       for (const channel of channels) {
         await client.query(
           `INSERT INTO delivery_jobs (id, signal_id, channel) VALUES ($1, $2, $3)`,

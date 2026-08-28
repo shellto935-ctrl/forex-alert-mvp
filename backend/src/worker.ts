@@ -1,12 +1,12 @@
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { placeVoiceCall } from './providers/voice.js';
-import { sendWhatsApp } from './providers/whatsapp.js';
+import { sendTelegram } from './providers/telegram.js';
 import type { DeliveryResult } from './types.js';
 import type { PendingDelivery, SignalStore } from './store/store.js';
 
 async function deliver(job: PendingDelivery): Promise<DeliveryResult> {
-  if (job.channel === 'whatsapp') return sendWhatsApp(job.signal);
+  if (job.channel === 'telegram') return sendTelegram(job.signal);
   return placeVoiceCall(job.signal);
 }
 

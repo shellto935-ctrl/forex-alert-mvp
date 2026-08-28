@@ -1,14 +1,12 @@
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { sendWhatsApp } from './providers/whatsapp.js';
-import { placeVoiceCall } from './providers/voice.js';
-import type { DeliveryResult, Signal } from './types.js';
-import type { PendingDelivery, SignalStore } from './store/store.js';
 import { fetchLatest5m } from './market/twelvedata.js';
 import { aggregateTo15m } from './market/aggregate.js';
 import { getSession } from './strategy/session.js';
 import { runStrategy, DEFAULT_PARAMS, type SetupMap } from './strategy/stateMachine.js';
 import type { Candle, StrategyEvent, SetupState } from './market/types.js';
+import type { Signal } from './types.js';
+import type { SignalStore } from './store/store.js';
 
 const SYMBOLS = ["EUR/USD", "GBP/USD"] as const;
 const setups: SetupMap = new Map();

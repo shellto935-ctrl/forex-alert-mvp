@@ -29,7 +29,7 @@ export class MemoryStore implements SignalStore {
 
     const signalRow: SignalRow = { id: randomUUID(), signal };
     this.signals.set(key, signalRow);
-    const channels: DeliveryChannel[] = signal.stage === 'ENTRY_READY' ? ['whatsapp', 'voice'] : ['whatsapp'];
+    const channels: DeliveryChannel[] = signal.stage === 'ENTRY_READY' ? ['telegram', 'voice'] : ['telegram'];
     for (const channel of channels) {
       const row: DeliveryRow = {
         id: randomUUID(), signalId: signalRow.id, channel, status: 'PENDING',

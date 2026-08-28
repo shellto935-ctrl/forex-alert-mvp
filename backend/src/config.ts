@@ -22,7 +22,9 @@ const schema = z.object({
   TWILIO_FROM: z.string().optional().default(''),
   TWILIO_TO: z.string().optional().default(''),
   TWELVEDATA_API_KEY: z.string().optional().default(''),
-  POLL_INTERVAL_MS: z.coerce.number().int().min(10_000).default(300_000)
+  POLL_INTERVAL_MS: z.coerce.number().int().min(10_000).default(300_000),
+  TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
+  TELEGRAM_CHAT_ID: z.string().optional().default('')
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV === 'production' && !value.DATABASE_URL) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'DATABASE_URL is required in production' });
