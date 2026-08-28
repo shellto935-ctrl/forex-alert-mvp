@@ -10,12 +10,12 @@ const signal: Signal = {
 };
 
 describe('messageText', () => {
-  it('contains the decision-critical fields', () => {
+  it('contains the decision-critical fields in Bengali', () => {
     const text = messageText(signal);
-    expect(text).toContain('ENTRY-READY');
+    expect(text).toContain('এন্ট্রি প্রস্তুত');
     expect(text).toContain('GBPUSD');
-    expect(text).toContain('SELL');
-    expect(text).toContain('NY_PM');
-    expect(text).toContain('no automatic trade was placed');
+    expect(text).toContain('বেচা (SELL)');
+    expect(text).toContain('নিউইয়র্ক PM সেশন');
+    expect(text).toContain('কোনো অটোমেটিক ট্রেড হয়নি');
   });
 });
