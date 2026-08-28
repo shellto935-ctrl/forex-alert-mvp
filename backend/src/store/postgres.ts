@@ -48,6 +48,8 @@ export class PostgresStore implements SignalStore {
         WHERE status = 'PROCESSING';
       UPDATE delivery_jobs SET status='PENDING', claim_token=NULL, lease_until=NULL
         WHERE status='PROCESSING' AND (lease_until IS NULL OR lease_until < now());
+      ALTER TABLE delivery_jobs DROP CONSTRAINT IF EXISTS delivery_jobs_channel_check;
+      ALTER TABLE delivery_jobs ADD CONSTRAINT delivery_jobs_channel_check CHECK (channel IN ('telegram', 'voice'));
     `);
   }
 
