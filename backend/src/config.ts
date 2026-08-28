@@ -25,6 +25,9 @@ const schema = z.object({
     if (!value.TELEGRAM_CHAT_ID) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TELEGRAM_CHAT_ID'], message: 'TELEGRAM_CHAT_ID is required when DRY_RUN=false' });
     }
+    if (!value.TWELVEDATA_API_KEY) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TWELVEDATA_API_KEY'], message: 'TWELVEDATA_API_KEY is required when DRY_RUN=false' });
+    }
   }
 });
 
