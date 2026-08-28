@@ -1,13 +1,11 @@
 import { config } from './config.js';
 import { logger } from './logger.js';
-import { placeVoiceCall } from './providers/voice.js';
 import { sendTelegram } from './providers/telegram.js';
 import type { DeliveryResult } from './types.js';
 import type { PendingDelivery, SignalStore } from './store/store.js';
 
 async function deliver(job: PendingDelivery): Promise<DeliveryResult> {
-  if (job.channel === 'telegram') return sendTelegram(job.signal);
-  return placeVoiceCall(job.signal);
+  return sendTelegram(job.signal);
 }
 
 export function startWorker(store: SignalStore): () => Promise<void> {

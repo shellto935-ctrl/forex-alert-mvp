@@ -12,17 +12,15 @@ function entrySignal(): Signal {
 }
 
 describe('MemoryStore delivery isolation', () => {
-  it('creates one Telegram and one voice job and never reclaims completed/terminal jobs', async () => {
+  it('creates one Telegram job and never reclaims completed jobs', async () => {
     const store = new MemoryStore();
     await store.init();
     await store.insert(entrySignal());
     const jobs = await store.claimPending(10);
-    expect(jobs.map((job) => job.channel).sort()).toEqual(['telegram', 'voice']);
+    expect(jobs.map((job) => job.channel)).toEqual(['telegram']);
 
     const telegram = jobs.find((job) => job.channel === 'telegram')!;
-    const voice = jobs.find((job) => job.channel === 'voice')!;
     await store.complete(telegram.id, telegram.claimToken, { channel: 'telegram', ok: true, providerId: 'msg.1' });
-    await store.fail(voice.id, voice.claimToken, { channel: 'voice', ok: false, retryable: false, error: 'invalid destination' }, 6);
 
     expect(await store.claimPending(10)).toEqual([]);
   });
