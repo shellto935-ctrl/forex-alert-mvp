@@ -13,7 +13,10 @@ const schema = z.object({
   TWELVEDATA_API_KEY: z.string().optional().default(''),
   POLL_INTERVAL_MS: z.coerce.number().int().min(10_000).default(300_000),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
-  TELEGRAM_CHAT_ID: z.string().optional().default('')
+  TELEGRAM_CHAT_ID: z.string().optional().default(''),
+  BACKTEST_ENABLED: booleanString.default('false'),
+  BACKTEST_START: z.string().default('2024-01-01T00:00:00Z'),
+  BACKTEST_END: z.string().default('2025-12-31T23:59:59Z')
 }).superRefine((value, ctx) => {
   if (value.NODE_ENV === 'production' && !value.DATABASE_URL) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'DATABASE_URL is required in production' });

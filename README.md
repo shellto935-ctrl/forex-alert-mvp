@@ -73,6 +73,10 @@ Required environment variables:
 - `TELEGRAM_CHAT_ID`
 - `WEBHOOK_SECRET`
 - `DRY_RUN=true` during validation
+- `BACKTEST_ENABLED=true` to run the one-time two-year historical evaluation
+- `BACKTEST_START` and `BACKTEST_END` to control the locked range
+
+Backtest progress/report endpoint: `/backtest/status`. The default split uses 2024 as validation and 2025 as untouched out-of-sample data. Historical downloads are throttled to preserve Twelve Data free-tier capacity.
 
 Never commit keys or tokens. Rotate any credential that has been exposed in chat, screenshots, logs or Git history.
 

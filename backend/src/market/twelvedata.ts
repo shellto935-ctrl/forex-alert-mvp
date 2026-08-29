@@ -61,6 +61,30 @@ export async function fetchCandles(symbol: Symbol, outputsize: number, nowMs = D
   return normalizeClosed5m(json.values, nowMs);
 }
 
+function apiDate(ms: number): string {
+  return new Date(ms).toISOString().replace('T', ' ').replace('.000Z', '');
+}
+
+export async function fetchHistorical5m(symbol: Symbol, startMs: number, endMs: number): Promise<Candle[]> {
+  const query = new URLSearchParams({
+    symbol, interval: '5min', start_date: apiDate(startMs), end_date: apiDate(endMs),
+    outputsize: '5000', format: 'JSON', timezone: 'UTC', order: 'asc', apikey: config.TWELVEDATA_API_KEY
+  });
+  const response = await fetch(`${BASE_URL}/time_series?${query}`, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`Twelve Data historical HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  const json = (await response.json()) as TimeSeriesResponse;
+  if (json.status !== 'ok' || !json.values) throw new Error(`Twelve Data historical error: ${json.message ?? 'unknown'}`);
+  const candles = json.values.map((row) => {
+    const openTimeMs = parseUtc(row.datetime);
+    return {
+      openTimeMs, datetime: new Date(openTimeMs).toISOString(),
+      open: Number(row.open), high: Number(row.high), low: Number(row.low), close: Number(row.close),
+      volume: row.volume === undefined ? undefined : Number(row.volume)
+    } satisfies Candle;
+  });
+  return canonicalize5m(candles);
+}
+
 export async function fetchLatest5m(symbol: Symbol, bars = 250): Promise<Candle[]> {
   try {
     return await fetchCandles(symbol, bars);

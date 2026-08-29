@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import type { SignalStore } from './store/store.js';
 import { signalSchema } from './types.js';
+import { getBacktestStatus } from './backtest/job.js';
 
 function secureEqual(left: string, right: string): boolean {
   const a = Buffer.from(left);
@@ -29,6 +30,15 @@ export function createApp(store: SignalStore) {
     } catch (error) {
       logger.error({ err: error }, 'readiness check failed');
       res.status(503).json({ ok: false, ready: false });
+    }
+  });
+
+  app.get('/backtest/status', async (_req, res) => {
+    try {
+      res.status(200).json({ ok: true, backtest: await getBacktestStatus() });
+    } catch (error) {
+      logger.error({ err: error }, 'backtest status failed');
+      res.status(503).json({ ok: false, error: 'backtest_status_unavailable' });
     }
   });
 
