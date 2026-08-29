@@ -29,12 +29,12 @@ describe('MemoryStore delivery channels', () => {
     expect(jobs.map((j) => j.channel)).toEqual(['telegram']);
   });
 
-  it('ENTRY_READY creates telegram + voice jobs', async () => {
+  it('ENTRY_READY creates one telegram job (urgent repeats handled inside provider)', async () => {
     const store = new MemoryStore();
     await store.init();
     await store.insert(entrySignal());
     const jobs = await store.claimPending(10);
-    expect(jobs.map((j) => j.channel).sort()).toEqual(['telegram', 'voice']);
+    expect(jobs.map((j) => j.channel)).toEqual(['telegram']);
   });
 
   it('never reclaims completed jobs', async () => {

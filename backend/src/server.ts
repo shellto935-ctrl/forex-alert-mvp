@@ -23,8 +23,8 @@ async function shutdown(signal: string) {
   forceExit.unref();
 
   server.close();
-  await stopWorker();
   await stopPolling();
+  await stopWorker();
   await store.close();
   clearTimeout(forceExit);
   process.exit(0);

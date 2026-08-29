@@ -49,7 +49,8 @@ export class PostgresStore implements SignalStore {
       UPDATE delivery_jobs SET status='PENDING', claim_token=NULL, lease_until=NULL
         WHERE status='PROCESSING' AND (lease_until IS NULL OR lease_until < now());
       ALTER TABLE delivery_jobs DROP CONSTRAINT IF EXISTS delivery_jobs_channel_check;
-      ALTER TABLE delivery_jobs ADD CONSTRAINT delivery_jobs_channel_check CHECK (channel IN ('telegram', 'voice'));
+      UPDATE delivery_jobs SET status='FAILED', last_error='channel retired'
+        WHERE channel <> 'telegram' AND status IN ('PENDING', 'PROCESSING');
     `);
   }
 
@@ -101,8 +102,8 @@ export class PostgresStore implements SignalStore {
     }>(
       `WITH picked AS (
          SELECT id FROM delivery_jobs
-         WHERE (status='PENDING' AND next_attempt_at <= now())
-            OR (status='PROCESSING' AND lease_until < now())
+         WHERE channel='telegram' AND ((status='PENDING' AND next_attempt_at <= now())
+            OR (status='PROCESSING' AND lease_until < now()))
          ORDER BY updated_at
          FOR UPDATE SKIP LOCKED
          LIMIT $1

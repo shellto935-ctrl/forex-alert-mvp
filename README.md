@@ -1,151 +1,87 @@
-# EURUSD–GBPUSD ICT Reversal Alert MVP
+# EURUSD–GBPUSD ICT Reversal Alert System
 
-TradingView Pine Script → Railway webhook/API → PostgreSQL dedup/state → WhatsApp message → phone call.
+Railway backend that polls Twelve Data 5-minute EUR/USD and GBP/USD candles, derives clock-aligned 15-minute candles, evaluates a conservative Head-and-Shoulders + ICT-style structure-shift model, and delivers Bengali Telegram alerts.
 
-This is an alert-only prototype. It never places a trade.
+This is an alert-only research system. It never places trades and does not guarantee profitable signals.
 
-## What is included
+## Strategy v0.2
 
-- `pine/ict_reversal_alerts_v0_1.pine`
-  - Runs on a 5-minute chart.
-  - Reads confirmed 15-minute pivots without future lookahead.
-  - Detects provisional normal/inverse Head-and-Shoulders geometry.
-  - Requires a 15M candle-body neckline break for `WATCH`.
-  - Requires a 5M retest plus engulfing/pin-bar rejection for `ENTRY_READY`.
-  - Uses `America/New_York` session time with London 02:00–05:00 and NY PM 13:00–15:00 defaults.
-  - Emits JSON through Pine `alert()` calls.
-- `backend/`
-  - Railway-ready TypeScript/Express web service.
-  - `POST /webhook/tradingview` accepts TradingView JSON and a revocable webhook token in the body.
-  - Zod validation, PostgreSQL uniqueness on `(setup_id, stage)`, per-channel delivery jobs, lease recovery, capped retries, structured logs, `GET /health` and database-backed `GET /readyz`.
-  - Official WhatsApp Cloud API template adapter.
-  - Twilio regular phone-call adapter for `ENTRY_READY` only.
-  - `DRY_RUN=true` by default for safe testing.
+The engine now requires:
 
-## Important limitation
+- Fully closed, ascending, UTC-aligned 5M candles with duplicate/gap checks.
+- Complete 15M candles built from exact `:00/:05/:10`, `:15/:20/:25`, etc. groups.
+- A confirmed chronological `H-L-H-L-H` or `L-H-L-H-L` pivot sequence.
+- Shoulder similarity, minimum head prominence, time symmetry and formation-duration limits.
+- The video-style neckline slope filter.
+- A qualifying liquidity sweep and reclaim around the head.
+- A 15M candle-body close through the projected neckline.
+- Qualified displacement: expanded true range, large body and close near the directional extreme.
+- A later 5M retest of the broken neckline plus engulfing or pin-bar rejection.
+- Invalidation and expiry checks before any alert.
 
-Head-and-Shoulders and ICT market structure are partly subjective. The ATR tolerances in v0.1 are starting assumptions, not a validated trading edge. Review historical chart labels and tune parameters before enabling live notifications.
+WATCH and ENTRY_READY share one deterministic setup ID derived from confirmed pivot timestamps. Terminal setups cannot re-alert.
 
-## 1. Local backend test
+## Session windows
+
+All session calculations use `America/New_York` with automatic daylight-saving handling:
+
+- London: 02:00–05:00 ET
+- NY PM: 13:00–15:00 ET
+
+The session is classified from the confirming candle timestamp, not server wall-clock time.
+
+## Reliability changes
+
+- Polls at absolute UTC five-minute boundaries plus a 10-second provider settlement delay.
+- Ignores unfinished or stale candles.
+- Uses 250 bars of warmup instead of 80.
+- Does not calculate across provider outages or weekend gaps.
+- Persists setup state and the last processed candle to PostgreSQL across redeploys.
+- Uses PostgreSQL as a durable signal outbox when available.
+- Keeps revised logic in `DRY_RUN=true` shadow mode until validation is approved.
+
+## Validation
+
+Local release gate:
 
 ```bash
 cd backend
-cp .env.example .env
-# Set WEBHOOK_SECRET to a random value with at least 16 characters.
-npm install
+npm ci
 npm run check
 npm test
 npm run build
-WEBHOOK_SECRET='replace-with-a-long-random-value' DRY_RUN=true npm start
 ```
 
-Liveness and readiness checks:
+The deterministic replay harness is in `backend/src/backtest/replay.ts`. Tests cover provider ordering, forming candles, quarter-hour aggregation, missing child bars, DST/session boundaries, chronological pattern geometry and replay determinism.
 
-```bash
-curl http://localhost:3000/health
-curl http://localhost:3000/readyz
-```
+A full historical backfill and untouched out-of-sample evaluation are still required before live promotion. Accuracy must be reported with sample size, precision/recall, false-signal rate, missed-setup rate, expectancy after modeled spread, and drawdown—not only win rate.
 
-Dry-run signal:
+## Deployment
 
-```bash
-curl -X POST http://localhost:3000/webhook/tradingview \
-  -H 'content-type: application/json' \
-  -d '{
-    "token":"replace-with-a-long-random-value",
-    "version":"1",
-    "setup_id":"EURUSD.BUY.1723615200000",
-    "stage":"WATCH",
-    "symbol":"EURUSD",
-    "direction":"BUY",
-    "session":"LONDON",
-    "pattern_tf":"15",
-    "entry_tf":"5",
-    "event_time":"REPLACE_WITH_CURRENT_ISO_UTC_TIME",
-    "price":1.1012,
-    "break_level":1.1000,
-    "zone_low":1.0998,
-    "zone_high":1.1002,
-    "invalidation":1.0950,
-    "reason":["INVERSE_HS","BULLISH_CHOCH"]
-  }'
-```
+Railway root directory: `/backend`
 
-## 2. Railway deployment
+Health endpoints:
 
-1. Create a Railway project from this repository with `backend` as the root directory.
-2. Add a Railway PostgreSQL service.
-3. Reference its `DATABASE_URL` in the web service.
-4. Set these service variables first:
-   - `WEBHOOK_SECRET`: a long random token; use the same token in the Pine indicator input.
-   - `DRY_RUN=true`
-   - `NODE_ENV=production`
-5. Generate a public Railway domain.
-6. Confirm `https://YOUR-DOMAIN/health` and `https://YOUR-DOMAIN/readyz` return HTTP 200.
-7. Keep the Railway deployment healthcheck path as `/readyz`.
-8. Add a separate external uptime monitor; Railway deployment healthchecks are not continuous monitoring.
+- `/health` — process liveness
+- `/readyz` — store readiness
 
-Do not use Railway Cron for the webhook API. It must be a persistent service.
+Required environment variables:
 
-## 3. TradingView setup
+- `DATABASE_URL`
+- `TWELVEDATA_API_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `WEBHOOK_SECRET`
+- `DRY_RUN=true` during validation
 
-Repeat for EURUSD and GBPUSD:
+Never commit keys or tokens. Rotate any credential that has been exposed in chat, screenshots, logs or Git history.
 
-1. Open the pair on a 5-minute chart.
-2. Paste and save `pine/ict_reversal_alerts_v0_1.pine` in Pine Editor.
-3. Add the indicator to the chart.
-4. Set `Railway webhook token` to the exact Railway `WEBHOOK_SECRET` value.
-5. Visually review historical WATCH and ENTRY labels before creating a live alert.
-6. Create one TradingView alert:
-   - Condition: `ICT H&S Two-Stage Alerts v0.1` → `Any alert() function call`
-   - Webhook URL: `https://YOUR-DOMAIN/webhook/tradingview`
-   - Alert frequency is controlled by the script at bar close.
-7. TradingView requires 2FA for webhook alerts. Do not put broker credentials or WhatsApp/Twilio secrets in Pine.
+## Research basis
 
-## 4. WhatsApp activation
+- User-provided H&S video: https://youtu.be/JA4N8nlycXY
+- Traditional H&S confirmation: https://chartschool.stockcharts.com/table-of-contents/chart-analysis/chart-patterns/head-and-shoulders-top
+- ICT 2022 Mentorship Episode 4: https://www.youtube.com/watch?v=L-ReMHiavPM
+- FX intraday seasonality: https://doi.org/10.3386/w12413
+- Computer-detected H&S evidence: https://doi.org/10.1093/rof/rfr037
 
-Keep `DRY_RUN=true` until template approval and end-to-end tests are complete.
-
-The backend expects official WhatsApp Business Platform template messages. Configure:
-
-- `WHATSAPP_GRAPH_VERSION`
-- `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_ACCESS_TOKEN`
-- `WHATSAPP_TO`
-- `WHATSAPP_WATCH_TEMPLATE`
-- `WHATSAPP_ENTRY_TEMPLATE`
-- `WHATSAPP_TEMPLATE_LANGUAGE`
-
-The two approved templates must each expose eight body variables in this order:
-
-1. stage
-2. symbol
-3. direction
-4. session
-5. reason
-6. price
-7. zone
-8. event time
-
-After a successful dry-run and template test, set `DRY_RUN=false`.
-
-## 5. Phone-call activation
-
-The practical v0.1 fallback is a regular programmable phone call for `ENTRY_READY` only. Configure:
-
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_FROM`
-- `TWILIO_TO`
-
-WhatsApp Business Calling can replace this later, but it has additional business onboarding, permission and eligibility requirements.
-
-## Safe rollout order
-
-1. Pine labels only.
-2. Railway dry-run webhook.
-3. PostgreSQL dedup verification.
-4. WhatsApp test recipient/template.
-5. Phone call test.
-6. Demo monitoring for several weeks.
-7. Live alert-only use after manual review of false positives and missed setups.
+Practitioner labels such as CHoCH, MSS, liquidity sweep and displacement are implemented as explicit OHLC rules. Marketing income claims from videos are not treated as evidence.

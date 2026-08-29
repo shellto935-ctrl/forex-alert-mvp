@@ -1,4 +1,6 @@
 export type Candle = {
+  /** UTC bar-open timestamp. */
+  openTimeMs: number;
   datetime: string;
   open: number;
   high: number;
@@ -18,8 +20,6 @@ export type StrategyEvent = {
   symbol: string;
   direction: Direction;
   session: Session;
-  patternTf: "15";
-  entryTf: "5";
   eventTime: string;
   price: number;
   breakLevel: number;
@@ -27,17 +27,35 @@ export type StrategyEvent = {
   zoneHigh: number;
   invalidation: number;
   reason: string[];
+  qualityScore: number;
 };
 
-export type Pivot = { price: number; time: number };
+export type PivotKind = "H" | "L";
+export type Pivot = {
+  kind: PivotKind;
+  price: number;
+  timeMs: number;
+  candleIndex: number;
+};
+
+export type SetupStatus = "DETECTED" | "WATCHING" | "ENTERED" | "EXPIRED" | "INVALIDATED";
 
 export type SetupState = {
-  state: number;
-  headTime: number;
+  id: string;
+  status: SetupStatus;
+  symbol: string;
+  direction: Direction;
+  headTimeMs: number;
+  rightShoulderTimeMs: number;
   neck1: number;
-  neckT1: number;
+  neckT1Ms: number;
   neck2: number;
-  neckT2: number;
+  neckT2Ms: number;
   invalidation: number;
-  watchBar: number;
+  qualityScore: number;
+  liquiditySweep: boolean;
+  session?: Session;
+  watchTimeMs?: number;
+  breakoutTimeMs?: number;
+  expiresAtMs?: number;
 };

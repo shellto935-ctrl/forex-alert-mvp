@@ -5,10 +5,10 @@ import { PostgresStore } from './postgres.js';
 import type { SignalStore } from './store.js';
 
 export function createStore(): SignalStore {
-  // Always use in-memory store for this alert-only MVP.
-  // Postgres is available but the delivery_jobs constraint migration is flaky on Railway.
-  // Alert-only system does not need durable storage — signals are ephemeral.
-  // When DRY_RUN=false (live notifications), in-memory store is sufficient.
-  logger.info('Using in-memory store (alert-only mode)');
+  if (config.DATABASE_URL) {
+    logger.info('Using durable PostgreSQL signal outbox');
+    return new PostgresStore(config.DATABASE_URL);
+  }
+  logger.warn('DATABASE_URL unavailable; using non-durable memory store');
   return new MemoryStore();
 }

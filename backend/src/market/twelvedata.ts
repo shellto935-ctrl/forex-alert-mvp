@@ -1,11 +1,12 @@
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import type { Candle, Symbol } from './types.js';
+import { canonicalize5m } from './normalize.js';
 
 const BASE_URL = 'https://api.twelvedata.com';
+const PROVIDER_SETTLEMENT_MS = 10_000;
 
 type TimeSeriesResponse = {
-  meta?: { status?: string };
   status?: string;
   message?: string;
   values?: Array<{
@@ -18,33 +19,51 @@ type TimeSeriesResponse = {
   }>;
 };
 
-export async function fetchCandles(symbol: Symbol, interval: string, outputsize: number): Promise<Candle[]> {
-  const url = `${BASE_URL}/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&format=JSON&apikey=${config.TWELVEDATA_API_KEY}`;
+function parseUtc(value: string): number {
+  const normalized = /(?:Z|[+-]\d\d:\d\d)$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}Z`;
+  const time = Date.parse(normalized);
+  if (!Number.isFinite(time)) throw new Error(`Invalid Twelve Data timestamp: ${value}`);
+  return time;
+}
 
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+export function normalizeClosed5m(rows: NonNullable<TimeSeriesResponse['values']>, nowMs = Date.now()): Candle[] {
+  const candles = rows.map((row) => {
+    const openTimeMs = parseUtc(row.datetime);
+    return {
+      openTimeMs,
+      datetime: new Date(openTimeMs).toISOString(),
+      open: Number(row.open), high: Number(row.high), low: Number(row.low), close: Number(row.close),
+      volume: row.volume === undefined ? undefined : Number(row.volume)
+    } satisfies Candle;
+  });
+  return canonicalize5m(candles, { nowMs, settlementMs: PROVIDER_SETTLEMENT_MS, trimBeforeLastGap: true });
+}
+
+export async function fetchCandles(symbol: Symbol, outputsize: number, nowMs = Date.now()): Promise<Candle[]> {
+  const query = new URLSearchParams({
+    symbol,
+    interval: '5min',
+    outputsize: String(outputsize),
+    format: 'JSON',
+    timezone: 'UTC',
+    order: 'asc',
+    apikey: config.TWELVEDATA_API_KEY
+  });
+  const response = await fetch(`${BASE_URL}/time_series?${query}`, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Twelve Data HTTP ${response.status}: ${text.slice(0, 200)}`);
   }
-
   const json = (await response.json()) as TimeSeriesResponse;
-  if (json.status !== 'ok' || !json.values) {
-    throw new Error(`Twelve Data error: ${json.message ?? 'unknown'}`);
-  }
-
-  return json.values.map((row) => ({
-    datetime: row.datetime,
-    open: parseFloat(row.open),
-    high: parseFloat(row.high),
-    low: parseFloat(row.low),
-    close: parseFloat(row.close),
-    volume: row.volume ? parseFloat(row.volume) : undefined
-  }));
+  if (json.status !== 'ok' || !json.values) throw new Error(`Twelve Data error: ${json.message ?? 'unknown'}`);
+  return normalizeClosed5m(json.values, nowMs);
 }
 
-export async function fetchLatest5m(symbol: Symbol, bars = 80): Promise<Candle[]> {
+export async function fetchLatest5m(symbol: Symbol, bars = 250): Promise<Candle[]> {
   try {
-    return await fetchCandles(symbol, '5min', bars);
+    return await fetchCandles(symbol, bars);
   } catch (error) {
     logger.error({ err: error, symbol }, 'Twelve Data fetch failed');
     return [];
