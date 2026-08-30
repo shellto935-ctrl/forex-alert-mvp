@@ -152,6 +152,7 @@ export async function startBacktestJob() {
   await init();
   const existing = await pool.query<{ id: string; status: string }>('SELECT id, status FROM backtest_runs WHERE version=$1', [VERSION]);
   if (existing.rows[0]?.status === 'COMPLETED' || existing.rows[0]?.status === 'RUNNING') return;
+  // Previous run FAILED — allow restart
   const id = existing.rows[0]?.id ?? randomUUID();
   await pool.query(
     `INSERT INTO backtest_runs (id, version, status, progress) VALUES ($1,$2,'RUNNING',$3::jsonb)
